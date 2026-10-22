@@ -8,7 +8,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local gravityNormal = workspace.Gravity
 
 local isRunning = false
-local speed = 450 
+local speed = 450 -- Скорость 450
 local currentTween = nil
 
 local sessionStartTime = tick()
@@ -18,9 +18,8 @@ local lastGold = 0
 local roundEarned = 0
 local totalEarned = 0
 
--- Переменная для Anti-Stuck
+-- Переменные для Anti-Stuck
 local lastProgressTime = tick()
-local ANTI_STUCK_TIMEOUT = 50 -- Секунд до авторесета
 
 local destinations = {
     CFrame.new(-43.6134491, 62.1137619, 672.744934, -0.999842644, -0.00183729955, 0.017645346, 0, 0.994622767, 0.103564225, -0.0177407414, 0.103547923, -0.994466245),
@@ -54,10 +53,22 @@ lastGold = getGold()
 
 -- При респавне персонажа сбрасываем счетчик текущего раунда
 player.CharacterAdded:Connect(function()
-    task.wait(1) 
+    task.wait(1)
     lastGold = getGold()
     roundEarned = 0
-    lastProgressTime = tick() -- Сбрасываем таймер при респавне, чтобы дать время на загрузку
+    lastProgressTime = tick()
+end)
+
+-- ============ NOCLIP (Только во время полета) ============
+RunService.Stepped:Connect(function()
+    -- Если скрипт работает и гравитация выключена (мы в полете)
+    if isRunning and player.Character and workspace.Gravity == 0 then
+        for _, v in pairs(player.Character:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end
 end)
 
 -- ============ GUI ============
@@ -213,18 +224,17 @@ statsFooter.Font = Enum.Font.Gotham
 statsFooter.TextSize = 10
 statsFooter.Parent = statsFrame
 
--- ============ ПРАВИЛЬНЫЙ ПОДСЧЕТ И ANTI-STUCK ============
+-- ============ ПРАВИЛЬНЫЙ ПОДСЧЕТ ============
 local statsVisible = false
 
 RunService.RenderStepped:Connect(function()
     local currentGold = getGold()
     
-    -- Если золото прибавилось, значит мы двигаемся и фармим
     if currentGold > lastGold then
         local diff = currentGold - lastGold
         roundEarned = roundEarned + diff
         totalEarned = totalEarned + diff
-        lastProgressTime = tick() -- Обновляем время последнего прогресса
+        lastProgressTime = tick() -- Обновляем время прогресса
     end
     lastGold = currentGold
 
@@ -238,27 +248,25 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Отдельный поток для проверки зависаний (Anti-Stuck)
+-- ============ АНТИ-ЗАВИСАНИЕ (Без убийства) ============
 task.spawn(function()
     while true do
         task.wait(1)
         if isRunning then
-            -- Если прошло больше ANTI_STUCK_TIMEOUT секунд без прогресса
-            if tick() - lastProgressTime >= ANTI_STUCK_TIMEOUT then
+            if tick() - lastProgressTime >= 50 then
                 if player.Character then
-                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 then
-                        -- Убиваем персонажа
-                        hum.Health = 0
+                    local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        if currentTween then currentTween:Cancel() end
+                        -- Поднимаем персонажа на 25 стадов вверх, чтобы вытолкнуть из текстуры
+                        root.CFrame = root.CFrame + Vector3.new(0, 25, 0)
+                        workspace.Gravity = gravityNormal
                     end
                 end
-                -- Сбрасываем таймер, чтобы дать время на респавн
                 lastProgressTime = tick()
-                -- Ждем 5 секунд, чтобы персонаж точно возродился
-                task.wait(5)
+                task.wait(3) -- Даем время на восстановление
             end
         else
-            -- Если скрипт выключен, таймер не идет
             lastProgressTime = tick()
         end
     end
@@ -271,7 +279,7 @@ statsBtn.MouseButton1Click:Connect(function()
     statsBtn.BackgroundColor3 = statsVisible and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(50, 80, 200)
 end)
 
--- ============ ЛОГИКА АВТОФАРМА ============
+-- ============ ЛОГИКА АВТОФАРМА (Исходная) ============
 close.MouseButton1Click:Connect(function()
     isRunning = false
     workspace.Gravity = gravityNormal
@@ -302,12 +310,7 @@ local function moveTo(targetCFrame, setGravity)
         workspace.Gravity = 0
     end
 
-    -- Добавил таймаут на сам полет, чтобы скрипт не зависал в цикле, если застрял
-    local flightTimeout = tick() + 15 
     while not reached and isRunning do
-        if tick() > flightTimeout then 
-            break -- Если летим слишком долго, прерываем полет
-        end
         RunService.Heartbeat:Wait()
     end
 end
@@ -351,7 +354,7 @@ toggle.MouseButton1Click:Connect(function()
     else
         toggle.Text = "Stop AutoFarm"
         toggle.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        lastProgressTime = tick() -- Обнуляем таймер при запуске
+        lastProgressTime = tick()
         task.spawn(autoFarmLoop)
     end
 end)
