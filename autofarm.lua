@@ -7,18 +7,21 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local gravityNormal = workspace.Gravity
 
+-- ВЕРСИЯ СКРИПТА
+local SCRIPT_VERSION = "V6.0"
+
 local isRunning = false
 local speed = 450 -- Скорость 450
 local currentTween = nil
 
 local sessionStartTime = tick()
 
--- Переменные для правильного подсчета золота
+-- Переменные для подсчета золота
 local lastGold = 0
 local roundEarned = 0
 local totalEarned = 0
 
--- Переменные для Anti-Stuck
+-- Переменная для Anti-Stuck (время последнего прогресса)
 local lastProgressTime = tick()
 
 local destinations = {
@@ -51,24 +54,12 @@ end
 
 lastGold = getGold()
 
--- При респавне персонажа сбрасываем счетчик текущего раунда
+-- При респавне персонажа сбрасываем счетчик текущего раунда и таймер
 player.CharacterAdded:Connect(function()
     task.wait(1)
     lastGold = getGold()
     roundEarned = 0
-    lastProgressTime = tick()
-end)
-
--- ============ NOCLIP (Только во время полета) ============
-RunService.Stepped:Connect(function()
-    -- Если скрипт работает и гравитация выключена (мы в полете)
-    if isRunning and player.Character and workspace.Gravity == 0 then
-        for _, v in pairs(player.Character:GetDescendants()) do
-            if v:IsA("BasePart") then
-                v.CanCollide = false
-            end
-        end
-    end
+    lastProgressTime = tick() -- Даем время на загрузку после респавна
 end)
 
 -- ============ GUI ============
@@ -115,7 +106,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(1, -60, 1, 0)
 titleText.Position = UDim2.new(0, 15, 0, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "KLX | Build a Boat"
+titleText.Text = "KLX | Build a Boat " .. SCRIPT_VERSION
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.Font = Enum.Font.GothamBold
 titleText.TextSize = 16
@@ -224,17 +215,18 @@ statsFooter.Font = Enum.Font.Gotham
 statsFooter.TextSize = 10
 statsFooter.Parent = statsFrame
 
--- ============ ПРАВИЛЬНЫЙ ПОДСЧЕТ ============
+-- ============ ПОДСЧЕТ ЗОЛОТА ============
 local statsVisible = false
 
 RunService.RenderStepped:Connect(function()
     local currentGold = getGold()
     
+    -- Если золото прибавилось (получили сундук)
     if currentGold > lastGold then
         local diff = currentGold - lastGold
         roundEarned = roundEarned + diff
         totalEarned = totalEarned + diff
-        lastProgressTime = tick() -- Обновляем время прогресса
+        lastProgressTime = tick() -- СБРАСЫВАЕМ ТАЙМЕР АНТИ-ЗАВИСАНИЯ
     end
     lastGold = currentGold
 
@@ -248,26 +240,20 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ============ АНТИ-ЗАВИСАНИЕ (Без убийства) ============
+-- ============ СИСТЕМА РЕСЕТА (50 СЕКУНД БЕЗ ПРОГРЕССА) ============
 task.spawn(function()
     while true do
         task.wait(1)
-        if isRunning then
-            if tick() - lastProgressTime >= 50 then
-                if player.Character then
-                    local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        if currentTween then currentTween:Cancel() end
-                        -- Поднимаем персонажа на 25 стадов вверх, чтобы вытолкнуть из текстуры
-                        root.CFrame = root.CFrame + Vector3.new(0, 25, 0)
-                        workspace.Gravity = gravityNormal
-                    end
+        if isRunning and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                -- Если 50 секунд не было золота (сундука)
+                if tick() - lastProgressTime >= 50 then
+                    hum.Health = 0 -- Ресаем персонажа
+                    lastProgressTime = tick() -- Сбрасываем таймер
+                    task.wait(5) -- Ждем, пока он возродится, чтобы не спамить
                 end
-                lastProgressTime = tick()
-                task.wait(3) -- Даем время на восстановление
             end
-        else
-            lastProgressTime = tick()
         end
     end
 end)
@@ -279,7 +265,7 @@ statsBtn.MouseButton1Click:Connect(function()
     statsBtn.BackgroundColor3 = statsVisible and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(50, 80, 200)
 end)
 
--- ============ ЛОГИКА АВТОФАРМА (Исходная) ============
+-- ============ ИСХОДНАЯ ЛОГИКА АВТОФАРМА (БЕЗ ИЗМЕНЕНИЙ) ============
 close.MouseButton1Click:Connect(function()
     isRunning = false
     workspace.Gravity = gravityNormal
